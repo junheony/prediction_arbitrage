@@ -1,0 +1,67 @@
+# 통합 배포용 간단한 Dockerfile
+# Backend와 Frontend를 하나의 컨테이너에서 실행
+
+FROM python:3.11-slim as backend-builder
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy backend requirements and install
+COPY backend/requirements.txt /app/backend/
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+
+# Copy backend code
+COPY backend/ /app/backend/
+COPY prediction_arbitrage/ /app/prediction_arbitrage/
+
+# Frontend build stage
+FROM node:18-alpine as frontend-builder
+
+WORKDIR /app
+
+COPY frontend/package*.json ./
+RUN npm install
+
+COPY frontend/ ./
+RUN npm run build
+
+# Final stage
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    nginx \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python packages from backend builder
+COPY --from=backend-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=backend-builder /usr/local/bin /usr/local/bin
+
+# Copy backend code
+COPY --from=backend-builder /app/backend /app/backend
+COPY --from=backend-builder /app/prediction_arbitrage /app/prediction_arbitrage
+
+# Copy frontend build
+COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+
+# Copy nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+cd /app/backend\n\
+uvicorn main:app --host 0.0.0.0 --port 8000 &\n\
+nginx -g "daemon off;"\n\
+' > /start.sh && chmod +x /start.sh
+
+EXPOSE 80
+
+CMD ["/start.sh"]

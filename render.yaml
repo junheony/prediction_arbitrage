@@ -1,0 +1,39 @@
+# Render.com 배포 설정 파일
+# 이 파일을 사용하면 클릭 한 번으로 배포 가능!
+
+services:
+  # Backend API
+  - type: web
+    name: prediction-arbitrage-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./arbitrage_bot.db
+      - key: KALSHI_EMAIL
+        sync: false  # User must provide
+      - key: KALSHI_PASSWORD
+        sync: false  # User must provide
+      - key: OPINION_API_KEY
+        value: ""
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+
+  # Frontend Static Site
+  - type: web
+    name: prediction-arbitrage-frontend
+    env: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://prediction-arbitrage-backend.onrender.com/api/*
+      - type: rewrite
+        source: /ws
+        destination: wss://prediction-arbitrage-backend.onrender.com/ws
