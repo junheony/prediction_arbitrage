@@ -7,6 +7,23 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 [![Platforms](https://img.shields.io/badge/Platforms-3-success.svg)]()
 
+## 🌐 NEW: 웹 애플리케이션!
+
+**이제 웹 브라우저에서 로그인하여 봇을 제어할 수 있습니다!**
+
+- ✅ 사용자 인증 (회원가입/로그인)
+- ✅ 웹 UI에서 봇 시작/중지
+- ✅ 실시간 대시보드 (WebSocket)
+- ✅ 차익거래 기회 목록
+- ✅ 다중 사용자 지원
+
+**빠른 시작:**
+```bash
+./START_WEB_APP.sh
+```
+
+자세한 내용: [README_WEBAPP.md](README_WEBAPP.md) | [WEB_APP_SETUP.md](WEB_APP_SETUP.md)
+
 ## 📋 목차
 - [소개](#소개)
 - [주요 기능](#주요-기능)

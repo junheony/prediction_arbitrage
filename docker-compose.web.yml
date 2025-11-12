@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: arbitrage-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./arbitrage_bot.db
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=10080
+      - POLYMARKET_API_KEY=${POLYMARKET_API_KEY}
+      - POLYMARKET_SECRET=${POLYMARKET_SECRET}
+      - POLYMARKET_PASSPHRASE=${POLYMARKET_PASSPHRASE}
+      - KALSHI_EMAIL=${KALSHI_EMAIL}
+      - KALSHI_PASSWORD=${KALSHI_PASSWORD}
+      - OPINION_API_KEY=${OPINION_API_KEY}
+    volumes:
+      - ./data:/app/backend/data
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: arbitrage-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  data:
