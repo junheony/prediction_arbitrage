@@ -1,8 +1,11 @@
 # 🤖 Web3 예측시장 무위험 차익거래 봇
 
+**3개 플랫폼 통합 지원: Polymarket + Kalshi + Opinion.trade**
+
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
+[![Platforms](https://img.shields.io/badge/Platforms-3-success.svg)]()
 
 ## 📋 목차
 - [소개](#소개)
@@ -63,23 +66,27 @@ Web3 예측시장 무위험 차익거래 봇은 여러 예측시장 플랫폼 �
 
 ## 🏛️ 지원 플랫폼
 
-### 1. **Polymarket**
+### 1. **Polymarket** ✅ 완전 통합
 - 세계 최대 탈중앙화 예측시장
 - Polygon 네트워크 기반
 - USDC 사용
-- 수수료: 0%
+- 수수료: 0% (가스비만)
+- **WebSocket + REST API 지원**
 
-### 2. **Kalshi**
+### 2. **Kalshi** ✅ 완전 통합
 - 미국 CFTC 규제 플랫폼
 - 법정화폐(USD) 직접 사용
 - 높은 신뢰성
-- 수수료: 거래액의 약 1%
+- 수수료: 거래액의 0.7%
+- **WebSocket + REST API 지원**
+- **자동 토큰 갱신 (30분)**
 
-### 3. **Manifold Markets**
-- 커뮤니티 중심 예측시장
-- 플레이 머니 + 실제 기부 가능
-- 다양한 니치 마켓
-- 수수료: 0%
+### 3. **Opinion.trade** ✅ 완전 통합
+- BNB Chain 기반 예측시장
+- YZi Labs 지원
+- AI 기반 오라클
+- 메인넷: Q4 2025 런칭 예정
+- **WebSocket + REST API 지원**
 
 ## 🚀 설치 방법
 
