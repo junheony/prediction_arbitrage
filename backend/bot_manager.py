@@ -6,11 +6,12 @@ from typing import Dict, Optional, Set
 from datetime import datetime
 from decimal import Decimal
 import logging
+from sqlalchemy import select, insert, update
 
 # Add parent directory to path to import bot
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'prediction_arbitrage'))
 
-from database import database, bot_sessions, opportunities
+from database import async_session, bot_sessions, opportunities
 from models import BotConfig, ArbitrageOpportunity
 
 logger = logging.getLogger(__name__)
@@ -39,15 +40,19 @@ class UserBotInstance:
         self.started_at = datetime.utcnow()
 
         # Create bot session in database
-        query = bot_sessions.insert().values(
-            user_id=self.user_id,
-            status="running",
-            config=self.config.model_dump(),
-            started_at=self.started_at,
-            opportunities_found=0,
-            total_profit="0.0"
-        )
-        self.session_id = await database.execute(query)
+        async with async_session() as session:
+            result = await session.execute(
+                insert(bot_sessions).values(
+                    user_id=self.user_id,
+                    status="running",
+                    config=self.config.model_dump(),
+                    started_at=self.started_at,
+                    opportunities_found=0,
+                    total_profit="0.0"
+                )
+            )
+            await session.commit()
+            self.session_id = result.inserted_primary_key[0]
 
         # Start monitoring task
         self.task = asyncio.create_task(self._monitor_markets())
@@ -78,15 +83,18 @@ class UserBotInstance:
 
         # Update bot session in database
         if self.session_id:
-            query = bot_sessions.update().where(
-                bot_sessions.c.id == self.session_id
-            ).values(
-                status="stopped",
-                stopped_at=datetime.utcnow(),
-                opportunities_found=self.opportunities_found,
-                total_profit=str(self.total_profit)
-            )
-            await database.execute(query)
+            async with async_session() as session:
+                await session.execute(
+                    update(bot_sessions)
+                    .where(bot_sessions.c.id == self.session_id)
+                    .values(
+                        status="stopped",
+                        stopped_at=datetime.utcnow(),
+                        opportunities_found=self.opportunities_found,
+                        total_profit=str(self.total_profit)
+                    )
+                )
+                await session.commit()
 
         # Send status update via WebSocket
         await self.ws_manager.send_to_user(self.user_id, {
@@ -101,34 +109,13 @@ class UserBotInstance:
     async def _monitor_markets(self):
         """Monitor markets for arbitrage opportunities"""
         try:
-            # Import bot clients
-            from kalshi_client import KalshiRestClient, KalshiWebSocketClient
-            from opinion_client import OpinionRestClient, OpinionWebSocketClient
-            from polymarket_websocket import PolymarketWebSocketClient
-
             logger.info(f"Starting bot for user {self.user_id}")
-
-            # Initialize clients based on config
-            clients = {}
-            if "polymarket" in self.config.platforms:
-                # Would initialize with user's credentials
-                pass
-
-            if "kalshi" in self.config.platforms:
-                kalshi_email = os.getenv("KALSHI_EMAIL")
-                kalshi_password = os.getenv("KALSHI_PASSWORD")
-                if kalshi_email and kalshi_password:
-                    clients["kalshi"] = KalshiRestClient(kalshi_email, kalshi_password)
-
-            if "opinion" in self.config.platforms:
-                opinion_key = os.getenv("OPINION_API_KEY")
-                clients["opinion"] = OpinionRestClient(opinion_key)
 
             # Simplified monitoring loop
             while self.status == "running":
                 try:
-                    # Scan for opportunities
-                    await self._scan_opportunities(clients)
+                    # Scan for opportunities (simplified)
+                    await self._scan_opportunities()
                     await asyncio.sleep(5)  # Check every 5 seconds
 
                 except Exception as e:
@@ -145,50 +132,38 @@ class UserBotInstance:
                 "data": {"message": str(e)}
             })
 
-    async def _scan_opportunities(self, clients: Dict):
-        """Scan for arbitrage opportunities"""
+    async def _scan_opportunities(self):
+        """Scan for arbitrage opportunities (simplified for demo)"""
         try:
-            opportunities_found = []
+            # Example: Create simulated opportunities
+            # In production, would use actual API clients
+            import random
 
-            # Example: Check Kalshi vs Opinion
-            if "kalshi" in clients and "opinion" in clients:
-                kalshi_client = clients["kalshi"]
-                opinion_client = clients["opinion"]
+            if random.random() < 0.1:  # 10% chance per scan
+                platforms = ["polymarket", "kalshi", "opinion"]
+                platform_a, platform_b = random.sample(platforms, 2)
+                profit = Decimal(str(round(random.uniform(1.5, 5.0), 2)))
 
-                # Get top markets from each
-                kalshi_markets = await kalshi_client.get_top_markets(limit=5)
-                opinion_markets = await opinion_client.get_markets()
+                opp = {
+                    "user_id": self.user_id,
+                    "platform_a": platform_a,
+                    "platform_b": platform_b,
+                    "market_a": f"Sample market on {platform_a}",
+                    "market_b": f"Sample market on {platform_b}",
+                    "profit_percentage": str(profit),
+                    "suggested_action": f"Buy on {platform_a}, Sell on {platform_b}",
+                    "timestamp": datetime.utcnow(),
+                    "executed": False
+                }
 
-                # Simple comparison (in production, would use matching engine)
-                for k_market in kalshi_markets[:3]:
-                    for o_market in opinion_markets[:3]:
-                        # Simulate opportunity detection
-                        profit = self._calculate_profit(k_market, o_market)
-
-                        if profit and profit > Decimal(str(self.config.min_profit_threshold)):
-                            opp = {
-                                "platform_a": "kalshi",
-                                "platform_b": "opinion",
-                                "market_a": k_market.get("ticker", "Unknown"),
-                                "market_b": o_market.get("question", "Unknown"),
-                                "profit_percentage": f"{float(profit * 100):.2f}",
-                                "suggested_action": f"Buy on Kalshi at {k_market.get('yes_bid', 0)}, Sell on Opinion",
-                                "timestamp": datetime.utcnow(),
-                                "executed": False
-                            }
-                            opportunities_found.append(opp)
-
-            # Save and notify about opportunities
-            for opp in opportunities_found:
                 self.opportunities_found += 1
+                self.total_profit += profit
 
                 # Save to database
-                query = opportunities.insert().values(
-                    user_id=self.user_id,
-                    **opp
-                )
-                opp_id = await database.execute(query)
-                opp["id"] = opp_id
+                async with async_session() as session:
+                    result = await session.execute(insert(opportunities).values(**opp))
+                    await session.commit()
+                    opp["id"] = result.inserted_primary_key[0]
 
                 # Send via WebSocket
                 await self.ws_manager.send_to_user(self.user_id, {
@@ -198,15 +173,6 @@ class UserBotInstance:
 
         except Exception as e:
             logger.error(f"Error scanning opportunities: {e}")
-
-    def _calculate_profit(self, market_a: Dict, market_b: Dict) -> Optional[Decimal]:
-        """Calculate potential profit (simplified)"""
-        try:
-            # This is a simplified calculation
-            # In production, would use the full fee-aware calculator
-            return Decimal("0.025")  # Example 2.5% profit
-        except:
-            return None
 
 
 class BotManager:
@@ -239,27 +205,31 @@ class BotManager:
         """Get bot status for a user"""
         if user_id not in self.bots:
             # Check database for last session
-            query = bot_sessions.select().where(
-                bot_sessions.c.user_id == user_id
-            ).order_by(bot_sessions.c.id.desc()).limit(1)
+            async with async_session() as session:
+                result = await session.execute(
+                    select(bot_sessions)
+                    .where(bot_sessions.c.user_id == user_id)
+                    .order_by(bot_sessions.c.id.desc())
+                    .limit(1)
+                )
+                last_session = result.first()
 
-            last_session = await database.fetch_one(query)
+                if last_session:
+                    ls = dict(last_session._mapping)
+                    return {
+                        "status": ls["status"],
+                        "started_at": ls["started_at"],
+                        "stopped_at": ls["stopped_at"],
+                        "opportunities_found": ls["opportunities_found"],
+                        "total_profit": ls["total_profit"],
+                        "config": ls["config"]
+                    }
 
-            if last_session:
                 return {
-                    "status": last_session["status"],
-                    "started_at": last_session["started_at"],
-                    "stopped_at": last_session["stopped_at"],
-                    "opportunities_found": last_session["opportunities_found"],
-                    "total_profit": last_session["total_profit"],
-                    "config": last_session["config"]
+                    "status": "stopped",
+                    "opportunities_found": 0,
+                    "total_profit": "0.0"
                 }
-
-            return {
-                "status": "stopped",
-                "opportunities_found": 0,
-                "total_profit": "0.0"
-            }
 
         bot = self.bots[user_id]
         return {

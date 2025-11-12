@@ -1,19 +1,26 @@
 """Database configuration and models"""
-import databases
 import sqlalchemy
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./arbitrage_bot.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./arbitrage_bot.db")
 
-database = databases.Database(DATABASE_URL)
+# Create async engine
+engine = create_async_engine(DATABASE_URL, echo=False)
+
+# Create async session factory
+async_session = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
+
 metadata = sqlalchemy.MetaData()
-
 Base = declarative_base()
 
 # Users table
@@ -58,19 +65,19 @@ opportunities = sqlalchemy.Table(
     Column("executed", Boolean, default=False),
 )
 
-# Create engine
-engine = sqlalchemy.create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-)
-
-def create_tables():
+async def create_tables():
     """Create all tables"""
-    metadata.create_all(engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
 
-async def connect_db():
-    """Connect to database"""
-    await database.connect()
-
-async def disconnect_db():
-    """Disconnect from database"""
-    await database.disconnect()
+async def get_db():
+    """Get database session"""
+    async with async_session() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()

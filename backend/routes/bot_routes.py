@@ -1,11 +1,12 @@
 """Bot control routes"""
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
+from sqlalchemy import select, delete, update
 
 from models import BotStartRequest, BotStatus, ArbitrageOpportunity, BotConfig
 from auth import get_current_active_user
 from bot_manager import bot_manager
-from database import database, opportunities
+from database import async_session, opportunities
 
 router = APIRouter(prefix="/api/bot", tags=["bot"])
 
@@ -52,12 +53,15 @@ async def get_opportunities(
 ):
     """Get recent arbitrage opportunities"""
     try:
-        query = opportunities.select().where(
-            opportunities.c.user_id == current_user["id"]
-        ).order_by(opportunities.c.timestamp.desc()).limit(limit)
-
-        results = await database.fetch_all(query)
-        return [ArbitrageOpportunity(**dict(r)) for r in results]
+        async with async_session() as session:
+            result = await session.execute(
+                select(opportunities)
+                .where(opportunities.c.user_id == current_user["id"])
+                .order_by(opportunities.c.timestamp.desc())
+                .limit(limit)
+            )
+            results = result.fetchall()
+            return [ArbitrageOpportunity(**dict(r._mapping)) for r in results]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -69,21 +73,26 @@ async def delete_opportunity(
 ):
     """Delete an opportunity"""
     try:
-        # Verify ownership
-        query = opportunities.select().where(
-            opportunities.c.id == opportunity_id,
-            opportunities.c.user_id == current_user["id"]
-        )
-        opp = await database.fetch_one(query)
+        async with async_session() as session:
+            # Verify ownership
+            result = await session.execute(
+                select(opportunities).where(
+                    opportunities.c.id == opportunity_id,
+                    opportunities.c.user_id == current_user["id"]
+                )
+            )
+            opp = result.first()
 
-        if not opp:
-            raise HTTPException(status_code=404, detail="Opportunity not found")
+            if not opp:
+                raise HTTPException(status_code=404, detail="Opportunity not found")
 
-        # Delete
-        query = opportunities.delete().where(opportunities.c.id == opportunity_id)
-        await database.execute(query)
+            # Delete
+            await session.execute(
+                delete(opportunities).where(opportunities.c.id == opportunity_id)
+            )
+            await session.commit()
 
-        return {"message": "Opportunity deleted successfully"}
+            return {"message": "Opportunity deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
@@ -97,23 +106,28 @@ async def execute_opportunity(
 ):
     """Mark opportunity as executed (in future, will place actual orders)"""
     try:
-        # Verify ownership
-        query = opportunities.select().where(
-            opportunities.c.id == opportunity_id,
-            opportunities.c.user_id == current_user["id"]
-        )
-        opp = await database.fetch_one(query)
+        async with async_session() as session:
+            # Verify ownership
+            result = await session.execute(
+                select(opportunities).where(
+                    opportunities.c.id == opportunity_id,
+                    opportunities.c.user_id == current_user["id"]
+                )
+            )
+            opp = result.first()
 
-        if not opp:
-            raise HTTPException(status_code=404, detail="Opportunity not found")
+            if not opp:
+                raise HTTPException(status_code=404, detail="Opportunity not found")
 
-        # Mark as executed
-        query = opportunities.update().where(
-            opportunities.c.id == opportunity_id
-        ).values(executed=True)
-        await database.execute(query)
+            # Mark as executed
+            await session.execute(
+                update(opportunities)
+                .where(opportunities.c.id == opportunity_id)
+                .values(executed=True)
+            )
+            await session.commit()
 
-        return {"message": "Opportunity marked as executed", "opportunity_id": opportunity_id}
+            return {"message": "Opportunity marked as executed", "opportunity_id": opportunity_id}
     except HTTPException:
         raise
     except Exception as e:

@@ -3,14 +3,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+from sqlalchemy import select
 
-from database import create_tables, connect_db, disconnect_db
+from database import create_tables
 from routes import auth_routes, bot_routes
 from websocket_manager import ws_manager
 from bot_manager import bot_manager
-from auth import get_current_user
-from jose import JWTError, jwt
 from auth import SECRET_KEY, ALGORITHM
+from jose import JWTError, jwt
 
 # Configure logging
 logging.basicConfig(
@@ -25,8 +25,7 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
     logger.info("Starting up...")
-    create_tables()
-    await connect_db()
+    await create_tables()
     bot_manager.set_ws_manager(ws_manager)
     logger.info("Application started successfully")
 
@@ -35,7 +34,6 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down...")
     await bot_manager.stop_all()
-    await disconnect_db()
     logger.info("Application shut down successfully")
 
 
@@ -94,9 +92,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str = None):
             return
 
         # Get user from database
-        from database import database, users
-        query = users.select().where(users.c.email == email)
-        user = await database.fetch_one(query)
+        from database import async_session, users
+
+        async with async_session() as session:
+            result = await session.execute(select(users).where(users.c.email == email))
+            user_row = result.first()
+            user = dict(user_row._mapping) if user_row else None
 
         if not user:
             await websocket.close(code=1008, reason="User not found")

@@ -43,7 +43,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     """Get current user from JWT token"""
-    from database import database, users
+    from database import async_session, users
+    from sqlalchemy import select
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,13 +60,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise credentials_exception
 
-    query = users.select().where(users.c.email == email)
-    user = await database.fetch_one(query)
+    async with async_session() as session:
+        result = await session.execute(select(users).where(users.c.email == email))
+        user_row = result.first()
 
-    if user is None:
+    if user_row is None:
         raise credentials_exception
 
-    return dict(user)
+    return dict(user_row._mapping)
 
 
 async def get_current_active_user(current_user: dict = Depends(get_current_user)):
