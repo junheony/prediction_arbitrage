@@ -24,16 +24,29 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
-    logger.info("Starting up...")
-    await create_tables()
-    bot_manager.set_ws_manager(ws_manager)
-    logger.info("Application started successfully")
+    import os
+    port = os.getenv("PORT", "8000")
+    logger.info(f"Starting up on port {port}...")
+
+    try:
+        await create_tables()
+        logger.info("Database tables created")
+        bot_manager.set_ws_manager(ws_manager)
+        logger.info("Bot manager initialized")
+        logger.info(f"Application started successfully on port {port}")
+    except Exception as e:
+        logger.error(f"Startup error: {e}")
+        raise
 
     yield
 
     # Shutdown
     logger.info("Shutting down...")
-    await bot_manager.stop_all()
+    try:
+        await bot_manager.stop_all()
+        logger.info("All bots stopped")
+    except Exception as e:
+        logger.error(f"Shutdown error: {e}")
     logger.info("Application shut down successfully")
 
 
@@ -73,7 +86,12 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy"}
+    import os
+    return {
+        "status": "healthy",
+        "port": os.getenv("PORT", "8000"),
+        "version": "2.0.0"
+    }
 
 
 @app.websocket("/ws")
